@@ -1,0 +1,18 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import ChatPage from "~/components/ChatPage";
+import type { StarlightPageProps } from "@astrojs/starlight/props";
+
+const props = {
+	frontmatter: {
+		title: "Ask Cloudflare Docs",
+		description: "Ask questions about Cloudflare products and get answers from the documentation.",
+		template: "splash",
+	},
+	hideBreadcrumbs: true,
+} as StarlightPageProps;
+---
+
+<StarlightPage {...props}>
+	<ChatPage client:load />
+</StarlightPage>

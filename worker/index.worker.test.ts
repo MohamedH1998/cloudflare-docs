@@ -1,6 +1,7 @@
 import { SELF } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import { parse } from "node-html-parser";
+import type { ManifestEnvelope } from "./docsfs-types";
 
 describe("Cloudflare Docs", () => {
 	describe("html handling", () => {
@@ -220,6 +221,97 @@ describe("Cloudflare Docs", () => {
 				expect(group).toBe("Cloudflare One");
 				expect(content_type).toBe("Changelog entry");
 			});
+		});
+	});
+
+	describe("DocsFS manifest", () => {
+		let manifest: ManifestEnvelope;
+
+		it("serves docsfs-manifest.json", async () => {
+			const request = new Request(
+				"http://fakehost/docsfs-manifest.json",
+			);
+			const response = await SELF.fetch(request);
+			expect(response.status).toBe(200);
+
+			manifest = await response.json();
+		});
+
+		it("has valid envelope structure", () => {
+			expect(manifest.buildIdFormat).toBe("v1");
+			expect(manifest.buildId).toMatch(/^v1:[a-f0-9]{8}:/);
+			expect(manifest.gitSha).toMatch(/^[a-f0-9]{40}$/);
+			expect(manifest.builtAt).toBeTruthy();
+			expect(manifest.totalPages).toBeGreaterThan(1000);
+			expect(manifest.totalProducts).toBeGreaterThan(50);
+		});
+
+		it("contains known products", () => {
+			expect(manifest.products["workers"]).toBeDefined();
+			expect(manifest.products["workers"].title).toBe("Workers");
+			expect(manifest.products["workers"].group).toBe("Developer platform");
+			expect(manifest.products["workers"].pageCount).toBeGreaterThan(50);
+			expect(manifest.products["workers"].topLevelPageIds.length).toBeGreaterThan(0);
+
+			expect(manifest.products["d1"]).toBeDefined();
+			expect(manifest.products["r2"]).toBeDefined();
+		});
+
+		it("contains known pages with correct fields", () => {
+			const workersRoot = manifest.pages["workers"];
+			expect(workersRoot).toBeDefined();
+			expect(workersRoot.product).toBe("workers");
+			expect(workersRoot.urlPath).toBe("/workers/");
+			expect(workersRoot.depth).toBe(0);
+			expect(workersRoot.title).toBeTruthy();
+		});
+
+		it("computes childIds for section pages", () => {
+			const workersRoot = manifest.pages["workers"];
+			expect(workersRoot.childIds).toBeDefined();
+			expect(workersRoot.childIds!.length).toBeGreaterThan(0);
+
+			// Each child should be a direct child of workers
+			for (const childId of workersRoot.childIds!) {
+				expect(childId).toMatch(/^workers\/[^/]+$/);
+				expect(manifest.pages[childId]).toBeDefined();
+				expect(manifest.pages[childId].depth).toBe(1);
+			}
+		});
+
+		it("flags navigation-only pages correctly", () => {
+			// There should be at least some navigation-only pages in a large docs site
+			const navPages = Object.values(manifest.pages).filter(
+				(p) => p.isNavigationOnly,
+			);
+			expect(navPages.length).toBeGreaterThan(0);
+		});
+
+		it("validates content types", () => {
+			const validTypes = new Set([
+				"changelog", "concept", "configuration", "content", "design-guide",
+				"example", "faq", "get-started", "glossary", "how-to",
+				"implementation-guide", "integration-guide", "learning-unit", "navigation",
+				"overview", "reference", "reference-architecture",
+				"reference-architecture-diagram", "release-notes", "solution-guide",
+				"troubleshooting", "tutorial",
+			]);
+
+			for (const page of Object.values(manifest.pages)) {
+				if (page.contentType !== undefined) {
+					expect(validTypes.has(page.contentType)).toBe(true);
+				}
+			}
+		});
+
+		it("totalPages matches pages record size", () => {
+			expect(manifest.totalPages).toBe(Object.keys(manifest.pages).length);
+		});
+
+		it("totalProducts matches products record size", () => {
+			expect(manifest.totalProducts).toBe(
+				Object.keys(manifest.products).length,
+			);
 		});
 	});
 });
