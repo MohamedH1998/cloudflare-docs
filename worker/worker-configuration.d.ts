@@ -8,3 +8,7 @@ declare module "*/__redirects" {
 	const value: string;
 	export default value;
 }
+declare module "*/docsfs-manifest.json" {
+	const value: string;
+	export default value;
+}

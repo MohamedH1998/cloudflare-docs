@@ -1,12 +1,22 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { generateRedirectsEvaluator } from "redirects-in-workers";
 import redirectsFileContents from "../dist/__redirects";
+import manifestJsonText from "../dist/docsfs-manifest.json";
+import type {
+	BuildInfo,
+	ManifestEnvelope,
+	ManifestSearchResult,
+	PageNode,
+	ProductListResult,
+} from "./docsfs-types";
 
 const redirectsEvaluator = generateRedirectsEvaluator(redirectsFileContents, {
 	maxLineLength: 10_000, // Usually 2_000
 	maxStaticRules: 10_000, // Usually 2_000
 	maxDynamicRules: 2_000, // Usually 100
 });
+
+const manifest: ManifestEnvelope = JSON.parse(manifestJsonText);
 
 const LLMS_FULL_R2_PREFIX = "v1/cloudflare-docs-llms-full";
 
@@ -136,5 +146,98 @@ export default class extends WorkerEntrypoint<Env> {
 		}
 
 		return response;
+	}
+
+	// ---- DocsFS RPC methods ----
+
+	async getBuildInfo(): Promise<BuildInfo> {
+		return {
+			buildId: manifest.buildId,
+			builtAt: manifest.builtAt,
+			gitSha: manifest.gitSha,
+			totalPages: manifest.totalPages,
+		};
+	}
+
+	async getManifest(): Promise<ManifestEnvelope> {
+		return manifest;
+	}
+
+	async getProducts(): Promise<ProductListResult> {
+		return { products: Object.values(manifest.products) };
+	}
+
+	async getProductPages(productSlug: string): Promise<PageNode[]> {
+		return Object.values(manifest.pages).filter(
+			(p) => p.product === productSlug,
+		);
+	}
+
+	async getPage(pageId: string): Promise<PageNode | undefined> {
+		return manifest.pages[pageId];
+	}
+
+	async searchPages(
+		query: string,
+		limit = 20,
+	): Promise<ManifestSearchResult> {
+		const tokens = query
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((t) => t.length > 0);
+
+		if (tokens.length === 0) {
+			return { matches: [], totalMatches: 0, truncated: false };
+		}
+
+		const scored: { page: PageNode; score: number }[] = [];
+
+		for (const page of Object.values(manifest.pages)) {
+			const titleLower = page.title.toLowerCase();
+			const idLower = page.id.toLowerCase();
+			const descLower = (page.description ?? "").toLowerCase();
+
+			let score = 0;
+			let allMatch = true;
+
+			for (const token of tokens) {
+				const titleMatch = titleLower.includes(token);
+				const idMatch = idLower.includes(token);
+				const descMatch = descLower.includes(token);
+
+				if (!titleMatch && !idMatch && !descMatch) {
+					allMatch = false;
+					break;
+				}
+
+				if (titleMatch) score += 3;
+				if (idMatch) score += 2;
+				if (descMatch) score += 1;
+			}
+
+			if (!allMatch) continue;
+
+			// Deprioritize flagged pages
+			if (page.deprioritized) {
+				score *= 0.5;
+			}
+
+			scored.push({ page, score });
+		}
+
+		// Sort by score descending, then depth ascending
+		scored.sort((a, b) => {
+			if (b.score !== a.score) return b.score - a.score;
+			return a.page.depth - b.page.depth;
+		});
+
+		const totalMatches = scored.length;
+		const matches = scored.slice(0, limit).map((s) => s.page);
+
+		return {
+			matches,
+			totalMatches,
+			truncated: totalMatches > limit,
+		};
 	}
 }

@@ -5,6 +5,7 @@ import SiteTitle from "@astrojs/starlight/components/SiteTitle.astro";
 import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro";
 
 import HeaderDropdowns from "../HeaderDropdowns.tsx";
+import AskAI from "../AskAI.tsx";
 import AgentDirective from "../AgentDirective.astro";
 ---
 
@@ -21,6 +22,7 @@ import AgentDirective from "../AgentDirective.astro";
 		<div id="right-group">
 			<HeaderDropdowns client:idle />
 			<div class="header-divider" role="separator"></div>
+			<AskAI client:idle />
 			<a
 				id="header-login-button"
 				href="https://dash.cloudflare.com/"
